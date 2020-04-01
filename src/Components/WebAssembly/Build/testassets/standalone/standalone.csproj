@@ -32,6 +32,9 @@
     <!-- This asset should not be treated as a static web asset as it is being linked out of the wwwroot folder. -->
     <Content Update="wwwroot\Fake-License.txt" Link="Excluded-Static-Web-Assets\Fake-License.txt" />
 
+    <!-- This is so that we can test PWA functionality in full -->
+    <ServiceWorker Include="wwwroot\service-worker.js" PublishedContent="wwwroot\service-worker.published.js" />
+
   </ItemGroup>
 
 </Project>
