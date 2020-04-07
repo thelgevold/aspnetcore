@@ -12,6 +12,8 @@ import {
 import { BinaryMessageFormat } from "./BinaryMessageFormat";
 import { isArrayBuffer } from "./Utils";
 
+import { MessagepackSerializer } from "./MessagePackSerializer";
+
 // TypeDoc's @inheritDoc and @link don't work across modules :(
 
 // constant encoding of the ping message
@@ -52,16 +54,23 @@ export class MessagePackHubProtocol implements IHubProtocol {
         if (logger === null) {
             logger = NullLogger.instance;
         }
-
         const messages = BinaryMessageFormat.parse(input);
-
-        const hubMessages = [];
+        const hubMessages: HubMessage[] = [];
+        let index = 0;
         for (const message of messages) {
             const parsedMessage = this.parseMessage(message, logger);
             // Can be null for an unknown message. Unknown message is logged in parseMessage
+
             if (parsedMessage) {
-                hubMessages.push(parsedMessage);
+                const previousMessage: HubMessage = hubMessages[index - 1];
+                if (parsedMessage.type === MessageType.Invocation && previousMessage && previousMessage.type === MessageType.Invocation) {
+                    hubMessages[index - 1] = { ...previousMessage, arguments: parsedMessage.arguments };
+                } else {
+                    hubMessages.push(parsedMessage);
+                }
             }
+
+            index++;
         }
 
         return hubMessages;
@@ -226,17 +235,22 @@ export class MessagePackHubProtocol implements IHubProtocol {
     }
 
     private writeInvocation(invocationMessage: InvocationMessage): ArrayBuffer {
-        const msgpack = msgpack5(this.messagePackOptions);
-        let payload: any;
+        const serializer = new MessagepackSerializer(this.messagePackOptions);
+
         if (invocationMessage.streamIds) {
-            payload = msgpack.encode([MessageType.Invocation, invocationMessage.headers || {}, invocationMessage.invocationId || null,
-            invocationMessage.target, invocationMessage.arguments, invocationMessage.streamIds]);
+            serializer.writeWrapper([MessageType.Invocation, invocationMessage.headers || {}, invocationMessage.invocationId || null,
+            invocationMessage.target, null, invocationMessage.streamIds]);
+
+            serializer.writeUserData([MessageType.Invocation, null, null, null, invocationMessage.arguments, null]);
+
         } else {
-            payload = msgpack.encode([MessageType.Invocation, invocationMessage.headers || {}, invocationMessage.invocationId || null,
-            invocationMessage.target, invocationMessage.arguments]);
+            serializer.writeWrapper([MessageType.Invocation, invocationMessage.headers || {}, invocationMessage.invocationId || null,
+            invocationMessage.target, null]);
+
+            serializer.writeUserData([MessageType.Invocation, null, null, null, invocationMessage.arguments]);
         }
 
-        return BinaryMessageFormat.write(payload.slice());
+        return serializer.serialize();
     }
 
     private writeStreamInvocation(streamInvocationMessage: StreamInvocationMessage): ArrayBuffer {
